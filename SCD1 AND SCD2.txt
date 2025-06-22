@@ -1,0 +1,247 @@
+
+--Alter schema SCDS to RAW
+--customer_dim
+create table stg_customers as 
+
+
+--runcate table stg_customers;
+--insert into stg_customers
+
+
+select cus.id as customer_id, cus.customer_name , cus.username,cus.segment ,p.postal_code, c.city,c.state,c.region,country
+from pincodes p
+inner join cities c on p.city_id=c.id
+inner join customers cus on cus.pincode_id=p.id
+--where p.last_updated_at = current_date or c.last_updated_at= current_date or cus.last_updated_at=current_date
+;
+
+
+
+
+select * from stg_customers
+
+
+create table stg_products as 
+--truncate table stg_products;
+--insert into stg_products
+select p.id as product_id , p.product_name, p.price, s.sub_category, s.category 
+from products p
+inner join subcategories s on p.sub_category_id=s.id
+--where p.last_updated_at = current_date or s.last_updated_at=current_date
+;
+
+select * from stg_products;
+
+truncate table stg_orders;
+
+create table stg_orders as 
+--insert into stg_orders
+select o.order_id,o.order_number,o.order_date, o.customer_id,o.discount, oi.product_id,oi.quantity,oi.sales 
+from orders o
+inner join order_items oi on o.order_id=oi.order_id
+
+
+select * from stg_orders;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+select * from stg_customers
+select * from stg_orders
+select * from stg_products
+
+
+
+
+
+--1,2,3,4,5
+
+
+create or replace TABLE CUSTOMER_DIM (
+    customer_key int identity(1,1),
+	CUSTOMER_ID NUMBER(38,0),
+	CUSTOMER_NAME VARCHAR(255),
+	USERNAME VARCHAR(255),
+	SEGMENT VARCHAR(255),
+	POSTAL_CODE VARCHAR(20),
+	CITY VARCHAR(255),
+	STATE VARCHAR(255),
+	REGION VARCHAR(255),
+	COUNTRY VARCHAR(255)
+);
+
+
+--first load --full load
+insert into CUSTOMER_DIM(CUSTOMER_ID, CUSTOMER_NAME, USERNAME, SEGMENT, POSTAL_CODE, CITY, STATE, REGION, COUNTRY)
+select * from stg_customers;
+
+
+
+
+---incremantal load 
+--update query 
+update CUSTOMER_DIM
+set segment = stg_customers.segment , postal_code = stg_customers.postal_code,country=stg_customers.country
+from stg_customers
+where stg_customers.customer_id=customer_dim.customer_id
+
+
+--insert query
+insert into CUSTOMER_DIM(CUSTOMER_ID, CUSTOMER_NAME, USERNAME, SEGMENT, POSTAL_CODE, CITY, STATE, REGION, COUNTRY)
+select * from stg_customers
+where customer_id not in (select customer_id from CUSTOMER_DIM)
+
+
+--select * from customer_dim
+--select * from stg_customers
+
+--update CUSTOMER_DIM
+--set country='United States'
+--where USERNAME='AA-10315'
+
+--insert into stg_customers values ('794','Manisha','AA-10','Consumer','68790','Hyderabad','Telangana','south','India')
+--delete from CUSTOMER_DIM where username='AA-10'
+
+--select * from customer_dim where customer_id=1
+
+
+
+create or replace TABLE PRODUCT_DIM (
+    product_key int identity (1,1),
+	PRODUCT_ID NUMBER(38,0),
+	PRODUCT_NAME VARCHAR(255),
+	PRICE NUMBER(6,2),
+	SUB_CATEGORY VARCHAR(255),
+	CATEGORY VARCHAR(255),
+    effective_date date ,
+    end_date date
+);
+
+--first load 
+insert into PRODUCT_DIM (PRODUCT_ID, PRODUCT_NAME, PRICE, SUB_CATEGORY, CATEGORY, EFFECTIVE_DATE, END_DATE)
+select * , current_date-1 as  effective_date ,'9999-12-31'::date  as end_date from stg_products
+
+select * from product_dim
+select * from stg_products
+
+--incremental laod 
+update PRODUCT_DIM
+set end_date = current_date
+from stg_products 
+where PRODUCT_DIM.product_id=stg_products.product_id and product_dim.end_date='9999-12-31';
+
+insert into PRODUCT_DIM (PRODUCT_ID, PRODUCT_NAME, PRICE, SUB_CATEGORY, CATEGORY, EFFECTIVE_DATE, END_DATE)
+select * , current_date+1 as  effective_date ,'9999-12-31'::date  as end_date from stg_products
+
+
+
+--update PRODUCT_DIM
+--set country='United States'
+--where USERNAME='AA-10315'
+
+insert into STG_PRODUCTS values ('1','Bush Birmingham Collection Bookcase; Dark Cherry','100.69','Bookcases','Furniture')
+insert into STG_PRODUCTS values ('2000','M Birmingham Collection Bookcase; Dark Cherry','100.69','Bookcases','Furniture')
+--delete from CUSTOMER_DIM where username='AA-10'
+
+--select * from customer_dim where customer_id=1
+
+
+select * from stg_orders
+
+create or replace TABLE fct_ORDERS (
+	ORDER_ID NUMBER(38,0),
+	ORDER_NUMBER VARCHAR(255),
+	ORDER_DATE DATE,
+	CUSTOMER_KEY NUMBER(38,0),
+	DISCOUNT NUMBER(6,2),
+	PRODUCT_KEY NUMBER(38,0),
+	QUANTITY NUMBER(38,0),
+	SALES NUMBER(8,2)
+);
+
+insert into fct_ORDERS
+select o.ORDER_ID, o.ORDER_NUMBER, o.ORDER_DATE, cd.CUSTOMER_KEY, o.DISCOUNT, pd.PRODUCT_KEY, o.QUANTITY, o.SALES
+from stg_orders o
+inner join product_dim pd on pd.product_id=o.product_id and pd.end_date='9999-12-31'
+inner join customer_dim cd on cd.customer_id=o.customer_id
+
+
+--select * from fct_ORDERS
+
+
+
+
+
+select p.category,sum(f.sales) as total_sales
+from fct_orders f
+inner join product_dim p on f.product_key=p.product_key
+group by p.category;
+
+insert into calendar_dim 
+with recursive  cte as (
+select '2000-01-01'::date as cal_date
+union all
+select cal_date+1 as cal_date
+from cte
+where cal_date+1<='2050-12-31'
+)
+select cal_date , year(cal_date) as cal_year,month(cal_date) as cal_month  from cte
+
+
+create or replace table calendar_dim 
+(
+cal_date date,
+cal_year varchar(4),
+cal_month varchar(2)
+)
+
+select * from calendar_dim
+
+select year(order_date) as year_order, sum(sales)
+from fct_orders
+group by year(order_date)
+
+select c.cal_year , sum(f.sales)
+from fct_orders f
+inner join calendar_dim c on f.order_date=c.cal_date
+group by c.cal_year;
+
+
+
+
+
+ETL extract transform load  dwh
+transform --IICS,SSIS,IBM DATASTAGE,ABINTIO ETC
+QA--TESTER
+dwh--datanalyst --powerBI,excel,tableau,qliksense,google looker
+
+
+
+
+ELT extract load transform
+
+
+raw
+stage
+DW
+
+
+dataanalyst
+
